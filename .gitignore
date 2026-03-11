@@ -22,9 +22,7 @@ checkpoints/
 rt_patchtst_v0_1_outputs/
 rt_patchtst_exog5_v1_outputs/
 
-# Data (place Excel/CSV locally or on server; do not commit)
-*.xlsx
-*.xls
+# 必要的原始数据文件（*.xlsx / *.xls）可提交上传，此处不忽略
 
 # IDE / OS
 .DS_Store
