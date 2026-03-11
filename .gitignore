@@ -22,10 +22,10 @@ checkpoints/
 rt_patchtst_v0_1_outputs/
 rt_patchtst_exog5_v1_outputs/
 
-# P3 数据解耦：data/ 下仅保留 README + schema，大文件不提交
-data/*.xlsx
-data/*.xls
-data/*.csv
+# P3 数据：可选是否提交 data/*.xlsx（若希望 pull 后即有数据，注释掉下面三行并 git add data/*.xlsx）
+# data/*.xlsx
+# data/*.xls
+# data/*.csv
 
 # IDE / OS
 .DS_Store

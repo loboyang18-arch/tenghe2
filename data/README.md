@@ -27,7 +27,26 @@
 - **格式**：Excel（.xlsx，首 sheet 或通过 `--sheet` 指定）或 CSV。
 - **缺失值**：标签（如实时电价、外生实际值）不做插值，含 NaN 的样本会被丢弃；特征列可按 `--feat_nan_strategy` 做 ffill/bfill。
 
+## 数据在服务器 / 多机上的保证方式
+
+任选其一即可：
+
+**方式一：数据随仓库一起提交（pull 即有数据）**  
+- 当前 `.gitignore` 已不再忽略 `data/*.xlsx`，可在本机执行：
+  ```bash
+  git add data/山东-全年-带时间点.xlsx
+  git commit -m "将示例数据纳入仓库，便于服务器 pull 后直接运行"
+  git push origin main
+  ```
+- 之后在服务器上 `git pull` 即可得到数据，无需额外拷贝。
+
+**方式二：数据不提交，服务器单独同步**  
+- 若希望仓库不含大文件，则服务器首次部署或每次 pull 后，需把数据放到 `data/`。例如：
+  - 本机 → 服务器：`scp data/山东-全年-带时间点.xlsx 用户@服务器:项目路径/data/`
+  - 或从 OSS/网盘下载到 `data/`，或挂载 OSS 到 `data/`。
+- 此时请在 `.gitignore` 中恢复对 `data/*.xlsx`、`data/*.csv` 的忽略，避免误提交。
+
 ## 本目录在 Git 中的约定
 
 - `data/README.md`、`data/schema.json` 随仓库提交。
-- 大体积数据文件（如 `*.xlsx`、`*.csv`）已通过 `.gitignore` 排除，不随仓库推送；克隆后需自行将数据放入 `data/` 或通过 OSS/挂载提供。
+- 数据文件（`*.xlsx`、`*.csv`）：若采用方式一则一并提交；若采用方式二则加入 `.gitignore`，由各环境自行同步到 `data/`。
