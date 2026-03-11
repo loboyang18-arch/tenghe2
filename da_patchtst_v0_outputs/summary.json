@@ -1,0 +1,123 @@
+{
+  "model": "PatchTSTv0 (minimal)",
+  "task": "DA 96-point curve forecast",
+  "excel": "山东-全年-带时间点.xlsx",
+  "sheet": "dataset-7964-20251216_1328805",
+  "y_col": "日前出清电价",
+  "prior_col": "日前电价预测值",
+  "excluded_price_pred_keywords": [
+    "日前价格预测"
+  ],
+  "split": {
+    "train_days": 182,
+    "val_days": 30,
+    "test_days": 30,
+    "effective_train_samples": 182,
+    "effective_val_samples": 30,
+    "effective_test_samples": 30,
+    "val_range": [
+      "2025-09-08",
+      "2025-10-07"
+    ],
+    "test_range": [
+      "2025-10-08",
+      "2025-12-16"
+    ]
+  },
+  "features": {
+    "n_channels": 29,
+    "pred_exog_cols": [
+      "系统负荷预测值",
+      "风光总加预测值",
+      "竞价空间预测值",
+      "地方电厂发电预测值",
+      "联络线预测值",
+      "风电预测值",
+      "光伏预测值",
+      "自备机组预测值",
+      "试验机组预测值",
+      "非市场化核电机组出力预测值"
+    ],
+    "k_lags": 7,
+    "time_features": [
+      "sin/cos hour, quarter, weekday, month, is_weekend, hour_norm, quarter_norm"
+    ]
+  },
+  "patch": {
+    "patch_len": 8,
+    "stride": 8,
+    "d_model": 256,
+    "n_heads": 8,
+    "n_layers": 4
+  },
+  "train": {
+    "lr": 0.001,
+    "batch_size": 64,
+    "max_epochs": 50,
+    "patience": 8,
+    "use_peak_weight": false,
+    "peak_q": 0.95,
+    "peak_weight": 3.0
+  },
+  "metrics": {
+    "val": {
+      "MAE": 88.1197280883789,
+      "RMSE": 137.9481262898304,
+      "Bias": -29.19005012512207
+    },
+    "test": {
+      "MAE": 92.98918151855469,
+      "RMSE": 137.82408539738256,
+      "Bias": -41.17351531982422
+    },
+    "test_high_P85": {
+      "n": 451,
+      "MAE": 258.9042663574219,
+      "RMSE": 293.7097179827389,
+      "Bias": -258.9042663574219,
+      "thr": 461.31829833984375
+    },
+    "test_high_P95": {
+      "n": 349,
+      "MAE": 306.1595764160156,
+      "RMSE": 328.88966852502375,
+      "Bias": -306.1595764160156,
+      "thr": 527.0
+    }
+  },
+  "outputs": {
+    "test_predictions_flat_csv": "test_predictions_flat.csv",
+    "test_last7d_png": "DA_patchtst_v0_test_last7d.png"
+  },
+  "feature_names": [
+    "PRIOR_DA",
+    "EXOGP_系统负荷预测值",
+    "EXOGP_风光总加预测值",
+    "EXOGP_竞价空间预测值",
+    "EXOGP_地方电厂发电预测值",
+    "EXOGP_联络线预测值",
+    "EXOGP_风电预测值",
+    "EXOGP_光伏预测值",
+    "EXOGP_自备机组预测值",
+    "EXOGP_试验机组预测值",
+    "EXOGP_非市场化核电机组出力预测值",
+    "DA_lag1",
+    "DA_lag2",
+    "DA_lag3",
+    "DA_lag4",
+    "DA_lag5",
+    "DA_lag6",
+    "DA_lag7",
+    "sin_hour",
+    "cos_hour",
+    "sin_quarter",
+    "cos_quarter",
+    "sin_wday",
+    "cos_wday",
+    "sin_month",
+    "cos_month",
+    "is_weekend",
+    "hour_norm",
+    "quarter_norm"
+  ]
+}
