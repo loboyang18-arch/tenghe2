@@ -185,3 +185,47 @@ def align_future_exog_to_rt_samples(
     if ok.any():
         out[ok] = exog_pred[pos[ok]]
     return out
+
+
+def fill_future_exog_nan_with_persist(
+    df: pd.DataFrame,
+    time_col: str,
+    rt_t_dec: np.ndarray,
+    fut: np.ndarray,
+    target_cols: Optional[List[str]] = None,
+) -> np.ndarray:
+    """
+    将 future-exog 中的 NaN 用“决策时刻 t_dec 的 last-observed actual（经 ffill）”补齐。
+
+    典型原因：外生实际值尾部 NaN 导致 build_samples 丢样本，从而对齐后 val/test 大片缺失。
+    对 RT 来说，future 分支缺失比“用 persist 兜底”更糟（会导致整段 split 被过滤为 0）。
+    """
+    target_cols = target_cols or list(EXOG_KEY5)
+    df2 = df.copy()
+    df2[time_col] = pd.to_datetime(df2[time_col])
+    df2 = df2.sort_values(time_col).reset_index(drop=True)
+    df2 = df2.set_index(pd.to_datetime(df2[time_col]))
+
+    # numeric + ffill
+    for c in target_cols:
+        if c in df2.columns:
+            df2[c] = pd.to_numeric(df2[c], errors="coerce").ffill()
+
+    rt_idx = pd.DatetimeIndex(pd.to_datetime(rt_t_dec))
+    pos = df2.index.get_indexer(rt_idx)  # -1 if missing timestamp
+    out = fut.copy().astype(np.float32)
+
+    for k, c in enumerate(target_cols):
+        if c not in df2.columns:
+            continue
+        vals = df2[c].values
+        for i in range(len(rt_t_dec)):
+            if pos[i] < 0:
+                continue
+            if np.isnan(out[i, :, k]).any():
+                out[i, :, k] = np.where(
+                    np.isnan(out[i, :, k]),
+                    float(vals[pos[i]]),
+                    out[i, :, k],
+                )
+    return out

@@ -32,7 +32,11 @@ from src.dataio import (
 )
 from src.datasets import RTDualBranchDataset
 from src.features_config import get_preferred_exog_order, load_config
-from src.future_exog import align_future_exog_to_rt_samples, build_future_exog_for_rt
+from src.future_exog import (
+    align_future_exog_to_rt_samples,
+    build_future_exog_for_rt,
+    fill_future_exog_nan_with_persist,
+)
 from src.models.patchtst_dual import RT_PatchTST_DualBranch
 from src.split import SplitConfig, build_samples_seq2seq
 from src.train.eval import compute_by_lead, compute_metrics, high_metrics, plot_last7d
@@ -149,6 +153,24 @@ def main() -> None:
     fut_tr = align_future_exog_to_rt_samples(Ttr, exog_t_dec, exog_pred)
     fut_va = align_future_exog_to_rt_samples(Tva, exog_t_dec, exog_pred)
     fut_te = align_future_exog_to_rt_samples(Tte, exog_t_dec, exog_pred)
+
+    def _nan_rows(fut: np.ndarray) -> int:
+        return int(np.isnan(fut.reshape(fut.shape[0], -1)).any(axis=1).sum())
+
+    print(
+        f"[Align] nan_rows train={_nan_rows(fut_tr)}/{len(fut_tr)} "
+        f"val={_nan_rows(fut_va)}/{len(fut_va)} test={_nan_rows(fut_te)}/{len(fut_te)} (before persist fill)"
+    )
+
+    # 关键修复：val/test 若因外生 actual 尾部缺失导致对齐为空，用 persist 兜底补齐
+    fut_tr = fill_future_exog_nan_with_persist(df, time_col, Ttr, fut_tr)
+    fut_va = fill_future_exog_nan_with_persist(df, time_col, Tva, fut_va)
+    fut_te = fill_future_exog_nan_with_persist(df, time_col, Tte, fut_te)
+
+    print(
+        f"[Align] nan_rows train={_nan_rows(fut_tr)}/{len(fut_tr)} "
+        f"val={_nan_rows(fut_va)}/{len(fut_va)} test={_nan_rows(fut_te)}/{len(fut_te)} (after persist fill)"
+    )
 
     def _valid_mask(fut: np.ndarray) -> np.ndarray:
         return ~np.isnan(fut.reshape(fut.shape[0], -1)).any(axis=1)
