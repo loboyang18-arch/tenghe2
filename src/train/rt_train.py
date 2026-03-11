@@ -144,6 +144,8 @@ def predict_split_dual(
 ) -> np.ndarray:
     """双分支预测原始尺度 [N, H]。"""
     model.eval()
+    if Xn.shape[0] == 0:
+        return np.zeros((0, int(prior_norm.shape[1])), dtype=np.float32)
     bs = 256
     preds = []
     for i in range(0, Xn.shape[0], bs):

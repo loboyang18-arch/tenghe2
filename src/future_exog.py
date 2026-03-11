@@ -103,7 +103,7 @@ def build_future_exog_for_rt(
     m_tr, m_va, m_te = _rt_calendar_mask(DT_ref, split, step_minutes, H)
     N = len(DT_ref)
     out = np.zeros((N, H, 5), dtype=np.float32)
-    dt_ref_pd = pd.to_datetime(DT_ref)
+    dt_ref_idx = pd.DatetimeIndex(pd.to_datetime(DT_ref))
 
     def _hgbt_est():
         return HistGradientBoostingRegressor(
@@ -119,15 +119,15 @@ def build_future_exog_for_rt(
         if pred_col:
             df = apply_feat_nan_strategy(df, [pred_col], feat_nan_strategy)
         X, Y, DT_t, PF = build_samples(df, time_col, target_col, pred_col, lookback, H)
-        dt_t_pd = pd.to_datetime(DT_t)
+        dt_t_idx = pd.DatetimeIndex(pd.to_datetime(DT_t))
+        idx_map = dt_t_idx.get_indexer(dt_ref_idx)  # -1 if missing
 
         method = best_methods.get(target_col, "ridge_residual")
 
         if method == "use_pred" and PF is not None:
-            for i in range(N):
-                j = np.where(dt_t_pd == dt_ref_pd[i])[0]
-                if len(j):
-                    out[i, :, col_idx] = PF[j[0]].astype(np.float32)
+            ok = idx_map >= 0
+            if ok.any():
+                out[ok, :, col_idx] = PF[idx_map[ok]].astype(np.float32)
             continue
 
         m_tr_t, _, _ = _rt_calendar_mask(DT_t, split, step_minutes, H)
@@ -157,10 +157,9 @@ def build_future_exog_for_rt(
             pred_t = model.predict(X)
 
         pred_t = np.asarray(pred_t, dtype=np.float32)
-        for i in range(N):
-            j = np.where(dt_t_pd == dt_ref_pd[i])[0]
-            if len(j):
-                out[i, :, col_idx] = pred_t[j[0]]
+        ok = idx_map >= 0
+        if ok.any():
+            out[ok, :, col_idx] = pred_t[idx_map[ok]]
 
     return DT_ref, out
 
@@ -174,14 +173,15 @@ def align_future_exog_to_rt_samples(
     将 exog 预测按 RT 样本的 t_dec 对齐，返回 [N_rt, H, 5]。
     exog_t_dec 与 exog_pred 一一对应；rt_t_dec 可能为 RT 的 train/val/test 子集。
     """
-    from pandas import Series
-
-    rt_dt = pd.to_datetime(rt_t_dec)
-    exog_dt = pd.to_datetime(exog_t_dec)
-    # 精确匹配
-    exog_series = Series(range(len(exog_dt)), index=exog_dt)
-    idx = exog_series.reindex(rt_dt).values
-    valid = ~np.isnan(idx)
-    out = np.full((len(rt_t_dec), exog_pred.shape[1], exog_pred.shape[2]), np.nan, dtype=np.float32)
-    out[valid] = exog_pred[idx[valid].astype(int)]
+    rt_idx = pd.DatetimeIndex(pd.to_datetime(rt_t_dec))
+    exog_idx = pd.DatetimeIndex(pd.to_datetime(exog_t_dec))
+    pos = exog_idx.get_indexer(rt_idx)  # -1 if missing
+    out = np.full(
+        (len(rt_t_dec), exog_pred.shape[1], exog_pred.shape[2]),
+        np.nan,
+        dtype=np.float32,
+    )
+    ok = pos >= 0
+    if ok.any():
+        out[ok] = exog_pred[pos[ok]]
     return out

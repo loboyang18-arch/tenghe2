@@ -161,6 +161,14 @@ def main() -> None:
     Xte, Yte, Pte, Tte, fut_te = Xte[vte], Yte[vte], Pte[vte], Tte[vte], fut_te[vte]
     print(f"[Filter] train {vtr.sum()}/{len(vtr)} val {vva.sum()}/{len(vva)} test {vte.sum()}/{len(vte)} valid")
 
+    if len(Xte) == 0:
+        raise RuntimeError(
+            "After aligning future exog predictions, TEST split has 0 valid samples. "
+            "This usually means t_dec alignment failed (timestamps mismatch) or future exog could not be built. "
+            "Check the printed [Filter] ratios; if test is 0/.., first verify time_col parsing and "
+            "that exog prediction build uses the same lookback/H/step_minutes."
+        )
+
     C = Xtr.shape[-1]
     norm = fit_normalizers(Xtr, Ytr)
     Xtr_n, Ytr_res_n, Ptr_n = apply_normalizers(Xtr, Ytr, Ptr, norm)
