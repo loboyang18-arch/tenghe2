@@ -43,21 +43,29 @@ import argparse
 import json
 import os
 import re
+import sys
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+# P4: 划分逻辑统一从 src.split 引入
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+from src.split import split_by_target_max_date  # noqa: E402
+
+import matplotlib
 import numpy as np
 import pandas as pd
 
-import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 from sklearn.linear_model import Ridge
 from sklearn.multioutput import MultiOutputRegressor
 
 try:
     from sklearn.ensemble import HistGradientBoostingRegressor
+
     _HAS_HGBT = True
 except Exception:
     _HAS_HGBT = False
@@ -85,11 +93,18 @@ def setup_matplotlib_fonts():
     """Best-effort: reduce CJK glyph warnings. Safe if fails."""
     try:
         candidates = [
-            "Microsoft YaHei", "SimHei", "Noto Sans CJK SC", "Source Han Sans SC",
-            "PingFang SC", "WenQuanYi Zen Hei", "Arial Unicode MS"
+            "Microsoft YaHei",
+            "SimHei",
+            "Noto Sans CJK SC",
+            "Source Han Sans SC",
+            "PingFang SC",
+            "WenQuanYi Zen Hei",
+            "Arial Unicode MS",
         ]
         for f in candidates:
-            matplotlib.rcParams["font.sans-serif"] = [f] + matplotlib.rcParams.get("font.sans-serif", [])
+            matplotlib.rcParams["font.sans-serif"] = [f] + matplotlib.rcParams.get(
+                "font.sans-serif", []
+            )
             fig = plt.figure()
             plt.text(0.5, 0.5, "测试值", ha="center")
             plt.close(fig)
@@ -137,7 +152,9 @@ def read_excel_any(excel: str, sheet: Optional[str]) -> pd.DataFrame:
     return pd.read_excel(excel, sheet_name=sheet)
 
 
-def apply_feat_nan_strategy(df: pd.DataFrame, cols: List[str], strategy: str) -> pd.DataFrame:
+def apply_feat_nan_strategy(
+    df: pd.DataFrame, cols: List[str], strategy: str
+) -> pd.DataFrame:
     """Apply NaN handling ONLY for feature columns (never for label/target)."""
     cols_u, seen = [], set()
     for c in cols:
@@ -165,14 +182,20 @@ def find_pred_col(df: pd.DataFrame, target_col: str) -> Optional[str]:
         if cand in df.columns:
             return cand
 
-    cand2 = target_col.replace("值", "预测值") if target_col.endswith("值") else (target_col + "预测值")
+    cand2 = (
+        target_col.replace("值", "预测值")
+        if target_col.endswith("值")
+        else (target_col + "预测值")
+    )
     if cand2 in df.columns:
         return cand2
 
     return None
 
 
-def build_seasonal_median_map(train_times: pd.Series, train_values: pd.Series) -> Dict[Tuple[int, int], float]:
+def build_seasonal_median_map(
+    train_times: pd.Series, train_values: pd.Series
+) -> Dict[Tuple[int, int], float]:
     """Map (weekday, minute_of_day) -> median(actual) computed on TRAIN only."""
     ts = pd.to_datetime(train_times)
     v = pd.to_numeric(train_values, errors="coerce")
@@ -185,7 +208,9 @@ def build_seasonal_median_map(train_times: pd.Series, train_values: pd.Series) -
     return {(int(wd), int(mod)): float(val) for (wd, mod), val in g.items()}
 
 
-def seasonal_predict(med_map: Dict[Tuple[int, int], float], times: np.ndarray) -> np.ndarray:
+def seasonal_predict(
+    med_map: Dict[Tuple[int, int], float], times: np.ndarray
+) -> np.ndarray:
     ts = pd.to_datetime(times)
     wd = ts.weekday.astype(int)
     mod = (ts.hour * 60 + ts.minute).astype(int)
@@ -235,23 +260,23 @@ def build_samples(
         # history must be complete
         ok = True
         for arr in hist_feats:
-            if np.any(np.isnan(arr[h0:i+1])):
+            if np.any(np.isnan(arr[h0 : i + 1])):
                 ok = False
                 break
         if not ok:
             continue
 
-        y_seq = y_raw[i+1:i+1+H]
+        y_seq = y_raw[i + 1 : i + 1 + H]
         if np.any(np.isnan(y_seq)):
             continue
 
-        x = np.stack([arr[h0:i+1] for arr in hist_feats], axis=0).reshape(-1)
+        x = np.stack([arr[h0 : i + 1] for arr in hist_feats], axis=0).reshape(-1)
         X_list.append(x)
         Y_list.append(y_seq)
         DT_list.append(ts[i])
 
         if pred_raw is not None:
-            PF_list.append(pred_raw[i+1:i+1+H])
+            PF_list.append(pred_raw[i + 1 : i + 1 + H])
 
     if not X_list:
         n_hist_feats = len(hist_feats)
@@ -268,25 +293,6 @@ def build_samples(
     return X, Y, DT, PF
 
 
-def split_by_target_max_date(decision_times: np.ndarray, H: int, step_minutes: int, val_days: int, test_days: int) -> Dict[str, np.ndarray]:
-    dt = pd.to_datetime(decision_times)
-    tgt_max = dt + pd.to_timedelta(step_minutes * H, unit="m")
-    dates = pd.Series(tgt_max).dt.date.values
-    uniq = np.array(sorted(pd.unique(dates)))
-    if len(uniq) <= (val_days + test_days + 2):
-        raise ValueError(f"Not enough unique target_max days ({len(uniq)}) for split: val={val_days}, test={test_days}")
-    test_dates = uniq[-test_days:]
-    val_dates = uniq[-(test_days + val_days):-test_days]
-    train_dates = uniq[:-(test_days + val_days)]
-    m_train = np.isin(dates, train_dates)
-    m_val = np.isin(dates, val_dates)
-    m_test = np.isin(dates, test_dates)
-    return {
-        "train": m_train, "val": m_val, "test": m_test,
-        "train_dates": train_dates, "val_dates": val_dates, "test_dates": test_dates,
-    }
-
-
 def plot_horizon_mae(mae_by_h: np.ndarray, out_path: str, title: str) -> None:
     plt.figure()
     x = np.arange(1, len(mae_by_h) + 1)
@@ -300,13 +306,19 @@ def plot_horizon_mae(mae_by_h: np.ndarray, out_path: str, title: str) -> None:
     plt.close()
 
 
-def plot_last7d_h24(decision_times: np.ndarray, y_true_h24: np.ndarray, y_pred_h24: np.ndarray, out_path: str, title: str) -> None:
+def plot_last7d_h24(
+    decision_times: np.ndarray,
+    y_true_h24: np.ndarray,
+    y_pred_h24: np.ndarray,
+    out_path: str,
+    title: str,
+) -> None:
     dt = pd.to_datetime(decision_times)
     if len(dt) == 0:
         return
     last_day = dt.max().normalize()
     start = last_day - pd.Timedelta(days=6)
-    mask = (dt >= start)
+    mask = dt >= start
     dt2 = dt[mask]
     yt = y_true_h24[mask]
     yp = y_pred_h24[mask]
@@ -323,7 +335,13 @@ def plot_last7d_h24(decision_times: np.ndarray, y_true_h24: np.ndarray, y_pred_h
     plt.close()
 
 
-def export_long_csv(out_path: str, decision_times: np.ndarray, Y_true: np.ndarray, Y_pred: np.ndarray, step_minutes: int) -> None:
+def export_long_csv(
+    out_path: str,
+    decision_times: np.ndarray,
+    Y_true: np.ndarray,
+    Y_pred: np.ndarray,
+    step_minutes: int,
+) -> None:
     dt = pd.to_datetime(decision_times)
     dt_arr = dt.to_pydatetime()
     N, H = Y_true.shape
@@ -331,14 +349,16 @@ def export_long_csv(out_path: str, decision_times: np.ndarray, Y_true: np.ndarra
     for i in range(N):
         base = dt_arr[i]
         for h in range(H):
-            rows.append({
-                "decision_time": base,
-                "target_time": base + pd.Timedelta(minutes=step_minutes * (h + 1)),
-                "horizon": h + 1,
-                "y_true": float(Y_true[i, h]),
-                "y_pred": float(Y_pred[i, h]),
-                "abs_err": float(abs(Y_true[i, h] - Y_pred[i, h])),
-            })
+            rows.append(
+                {
+                    "decision_time": base,
+                    "target_time": base + pd.Timedelta(minutes=step_minutes * (h + 1)),
+                    "horizon": h + 1,
+                    "y_true": float(Y_true[i, h]),
+                    "y_pred": float(Y_pred[i, h]),
+                    "abs_err": float(abs(Y_true[i, h] - Y_pred[i, h])),
+                }
+            )
     pd.DataFrame(rows).to_csv(out_path, index=False, encoding="utf-8-sig")
 
 
@@ -372,7 +392,9 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
 
     last_valid_time = df.loc[last_valid_idx, cfg.time_col]
     df = df[df[cfg.time_col] <= last_valid_time].reset_index(drop=True)
-    print(f"[Target] {target_col} last_valid_time={last_valid_time} truncated_rows={len(df)}")
+    print(
+        f"[Target] {target_col} last_valid_time={last_valid_time} truncated_rows={len(df)}"
+    )
 
     pred_col = find_pred_col(df, target_col)
     if pred_col is not None:
@@ -381,19 +403,31 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
     else:
         print(f"[Target] {target_col} pred_col=None")
 
-    X, Y, DT, PF = build_samples(df, cfg.time_col, target_col, pred_col, cfg.lookback, cfg.H)
+    X, Y, DT, PF = build_samples(
+        df, cfg.time_col, target_col, pred_col, cfg.lookback, cfg.H
+    )
     print(f"[Samples] {target_col} N={len(DT)} (after dropping label-NaN windows)")
     if len(DT) == 0:
         return out_rows
 
-    splits = split_by_target_max_date(DT, cfg.H, cfg.step_minutes, cfg.val_days, cfg.test_days)
+    splits = split_by_target_max_date(
+        DT, cfg.H, cfg.step_minutes, cfg.val_days, cfg.test_days
+    )
     m_tr, m_te = splits["train"], splits["test"]
-    print(f"[Split] train/val/test = {splits['train'].sum()}/{splits['val'].sum()}/{splits['test'].sum()}  (by target_max_date)")
+    print(
+        f"[Split] train/val/test = {splits['train'].sum()}/{splits['val'].sum()}/{splits['test'].sum()}  (by target_max_date)"
+    )
 
     train_end_date = pd.to_datetime(pd.Series(splits["train_dates"]).max())
-    train_end_time = pd.Timestamp(train_end_date.date()) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    train_end_time = (
+        pd.Timestamp(train_end_date.date())
+        + pd.Timedelta(days=1)
+        - pd.Timedelta(seconds=1)
+    )
     df_train_for_seasonal = df[df[cfg.time_col] <= train_end_time]
-    seasonal_map = build_seasonal_median_map(df_train_for_seasonal[cfg.time_col], df_train_for_seasonal[target_col])
+    seasonal_map = build_seasonal_median_map(
+        df_train_for_seasonal[cfg.time_col], df_train_for_seasonal[target_col]
+    )
 
     base_out = os.path.join(cfg.out_dir, cfg.tag, safe_name(target_col))
     ensure_dir(base_out)
@@ -403,18 +437,38 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
         dt_te = pd.to_datetime(DT[m_te])
         Yhat = np.zeros((len(dt_te), cfg.H), dtype=float)
         for h in range(cfg.H):
-            tgt_times = (dt_te + pd.to_timedelta(cfg.step_minutes * (h + 1), unit="m")).values
+            tgt_times = (
+                dt_te + pd.to_timedelta(cfg.step_minutes * (h + 1), unit="m")
+            ).values
             Yhat[:, h] = seasonal_predict(seasonal_map, tgt_times)
         metrics = compute_metrics(Y[m_te], Yhat)
-        out_sub = os.path.join(base_out, "seasonal_median"); ensure_dir(out_sub)
-        json.dump({"method": "seasonal_median", "target": target_col, **metrics},
-                  open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=2)
-        plot_horizon_mae(np.array(metrics["mae_by_h"]), os.path.join(out_sub, "test_horizon_mae.png"),
-                         f"{target_col} seasonal_median horizon MAE")
-        plot_last7d_h24(DT[m_te], Y[m_te, -1], Yhat[:, -1], os.path.join(out_sub, "test_last7d_h24.png"),
-                        f"{target_col} seasonal_median h24 last7d")
-        export_long_csv(os.path.join(out_sub, "test_predictions_long.csv"), DT[m_te], Y[m_te], Yhat, cfg.step_minutes)
+        out_sub = os.path.join(base_out, "seasonal_median")
+        ensure_dir(out_sub)
+        json.dump(
+            {"method": "seasonal_median", "target": target_col, **metrics},
+            open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
+            ensure_ascii=False,
+            indent=2,
+        )
+        plot_horizon_mae(
+            np.array(metrics["mae_by_h"]),
+            os.path.join(out_sub, "test_horizon_mae.png"),
+            f"{target_col} seasonal_median horizon MAE",
+        )
+        plot_last7d_h24(
+            DT[m_te],
+            Y[m_te, -1],
+            Yhat[:, -1],
+            os.path.join(out_sub, "test_last7d_h24.png"),
+            f"{target_col} seasonal_median h24 last7d",
+        )
+        export_long_csv(
+            os.path.join(out_sub, "test_predictions_long.csv"),
+            DT[m_te],
+            Y[m_te],
+            Yhat,
+            cfg.step_minutes,
+        )
         out_rows.append({"target": target_col, "method": "seasonal_median", **metrics})
 
     # persist
@@ -422,15 +476,33 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
         last_obs = X[m_te, cfg.lookback - 1]
         Yhat = np.repeat(last_obs.reshape(-1, 1), cfg.H, axis=1)
         metrics = compute_metrics(Y[m_te], Yhat)
-        out_sub = os.path.join(base_out, "persist"); ensure_dir(out_sub)
-        json.dump({"method": "persist", "target": target_col, **metrics},
-                  open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=2)
-        plot_horizon_mae(np.array(metrics["mae_by_h"]), os.path.join(out_sub, "test_horizon_mae.png"),
-                         f"{target_col} persist horizon MAE")
-        plot_last7d_h24(DT[m_te], Y[m_te, -1], Yhat[:, -1], os.path.join(out_sub, "test_last7d_h24.png"),
-                        f"{target_col} persist h24 last7d")
-        export_long_csv(os.path.join(out_sub, "test_predictions_long.csv"), DT[m_te], Y[m_te], Yhat, cfg.step_minutes)
+        out_sub = os.path.join(base_out, "persist")
+        ensure_dir(out_sub)
+        json.dump(
+            {"method": "persist", "target": target_col, **metrics},
+            open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
+            ensure_ascii=False,
+            indent=2,
+        )
+        plot_horizon_mae(
+            np.array(metrics["mae_by_h"]),
+            os.path.join(out_sub, "test_horizon_mae.png"),
+            f"{target_col} persist horizon MAE",
+        )
+        plot_last7d_h24(
+            DT[m_te],
+            Y[m_te, -1],
+            Yhat[:, -1],
+            os.path.join(out_sub, "test_last7d_h24.png"),
+            f"{target_col} persist h24 last7d",
+        )
+        export_long_csv(
+            os.path.join(out_sub, "test_predictions_long.csv"),
+            DT[m_te],
+            Y[m_te],
+            Yhat,
+            cfg.step_minutes,
+        )
         out_rows.append({"target": target_col, "method": "persist", **metrics})
 
     # use_pred
@@ -444,18 +516,44 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
                 for h in range(cfg.H):
                     miss = np.isnan(Yhat[:, h])
                     if miss.any():
-                        tgt_times = (dt_te + pd.to_timedelta(cfg.step_minutes * (h + 1), unit="m")).values
+                        tgt_times = (
+                            dt_te
+                            + pd.to_timedelta(cfg.step_minutes * (h + 1), unit="m")
+                        ).values
                         Yhat[miss, h] = seasonal_predict(seasonal_map, tgt_times)[miss]
             metrics = compute_metrics(Y[m_te], Yhat)
-            out_sub = os.path.join(base_out, "use_pred"); ensure_dir(out_sub)
-            json.dump({"method": "use_pred", "target": target_col, "pred_col": pred_col, **metrics},
-                      open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
-                      ensure_ascii=False, indent=2)
-            plot_horizon_mae(np.array(metrics["mae_by_h"]), os.path.join(out_sub, "test_horizon_mae.png"),
-                             f"{target_col} use_pred horizon MAE")
-            plot_last7d_h24(DT[m_te], Y[m_te, -1], Yhat[:, -1], os.path.join(out_sub, "test_last7d_h24.png"),
-                            f"{target_col} use_pred h24 last7d")
-            export_long_csv(os.path.join(out_sub, "test_predictions_long.csv"), DT[m_te], Y[m_te], Yhat, cfg.step_minutes)
+            out_sub = os.path.join(base_out, "use_pred")
+            ensure_dir(out_sub)
+            json.dump(
+                {
+                    "method": "use_pred",
+                    "target": target_col,
+                    "pred_col": pred_col,
+                    **metrics,
+                },
+                open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
+                ensure_ascii=False,
+                indent=2,
+            )
+            plot_horizon_mae(
+                np.array(metrics["mae_by_h"]),
+                os.path.join(out_sub, "test_horizon_mae.png"),
+                f"{target_col} use_pred horizon MAE",
+            )
+            plot_last7d_h24(
+                DT[m_te],
+                Y[m_te, -1],
+                Yhat[:, -1],
+                os.path.join(out_sub, "test_last7d_h24.png"),
+                f"{target_col} use_pred h24 last7d",
+            )
+            export_long_csv(
+                os.path.join(out_sub, "test_predictions_long.csv"),
+                DT[m_te],
+                Y[m_te],
+                Yhat,
+                cfg.step_minutes,
+            )
             out_rows.append({"target": target_col, "method": "use_pred", **metrics})
 
     # ridge_pure
@@ -464,15 +562,38 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
         model.fit(X[m_tr], Y[m_tr])
         Yhat = model.predict(X[m_te])
         metrics = compute_metrics(Y[m_te], Yhat)
-        out_sub = os.path.join(base_out, "ridge_pure"); ensure_dir(out_sub)
-        json.dump({"method": "ridge_pure", "target": target_col, "ridge_alpha": cfg.ridge_alpha, **metrics},
-                  open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=2)
-        plot_horizon_mae(np.array(metrics["mae_by_h"]), os.path.join(out_sub, "test_horizon_mae.png"),
-                         f"{target_col} ridge_pure horizon MAE")
-        plot_last7d_h24(DT[m_te], Y[m_te, -1], Yhat[:, -1], os.path.join(out_sub, "test_last7d_h24.png"),
-                        f"{target_col} ridge_pure h24 last7d")
-        export_long_csv(os.path.join(out_sub, "test_predictions_long.csv"), DT[m_te], Y[m_te], Yhat, cfg.step_minutes)
+        out_sub = os.path.join(base_out, "ridge_pure")
+        ensure_dir(out_sub)
+        json.dump(
+            {
+                "method": "ridge_pure",
+                "target": target_col,
+                "ridge_alpha": cfg.ridge_alpha,
+                **metrics,
+            },
+            open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
+            ensure_ascii=False,
+            indent=2,
+        )
+        plot_horizon_mae(
+            np.array(metrics["mae_by_h"]),
+            os.path.join(out_sub, "test_horizon_mae.png"),
+            f"{target_col} ridge_pure horizon MAE",
+        )
+        plot_last7d_h24(
+            DT[m_te],
+            Y[m_te, -1],
+            Yhat[:, -1],
+            os.path.join(out_sub, "test_last7d_h24.png"),
+            f"{target_col} ridge_pure h24 last7d",
+        )
+        export_long_csv(
+            os.path.join(out_sub, "test_predictions_long.csv"),
+            DT[m_te],
+            Y[m_te],
+            Yhat,
+            cfg.step_minutes,
+        )
         out_rows.append({"target": target_col, "method": "ridge_pure", **metrics})
 
     # ridge_residual
@@ -486,20 +607,48 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
             model.fit(Xr[m_tr], Yres[m_tr])
             Yhat = PF[m_te] + model.predict(Xr[m_te])
             metrics = compute_metrics(Y[m_te], Yhat)
-            out_sub = os.path.join(base_out, "ridge_residual"); ensure_dir(out_sub)
-            json.dump({"method": "ridge_residual", "target": target_col, "pred_col": pred_col, "ridge_alpha": cfg.ridge_alpha, **metrics},
-                      open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
-                      ensure_ascii=False, indent=2)
-            plot_horizon_mae(np.array(metrics["mae_by_h"]), os.path.join(out_sub, "test_horizon_mae.png"),
-                             f"{target_col} ridge_residual horizon MAE")
-            plot_last7d_h24(DT[m_te], Y[m_te, -1], Yhat[:, -1], os.path.join(out_sub, "test_last7d_h24.png"),
-                            f"{target_col} ridge_residual h24 last7d")
-            export_long_csv(os.path.join(out_sub, "test_predictions_long.csv"), DT[m_te], Y[m_te], Yhat, cfg.step_minutes)
-            out_rows.append({"target": target_col, "method": "ridge_residual", **metrics})
+            out_sub = os.path.join(base_out, "ridge_residual")
+            ensure_dir(out_sub)
+            json.dump(
+                {
+                    "method": "ridge_residual",
+                    "target": target_col,
+                    "pred_col": pred_col,
+                    "ridge_alpha": cfg.ridge_alpha,
+                    **metrics,
+                },
+                open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
+                ensure_ascii=False,
+                indent=2,
+            )
+            plot_horizon_mae(
+                np.array(metrics["mae_by_h"]),
+                os.path.join(out_sub, "test_horizon_mae.png"),
+                f"{target_col} ridge_residual horizon MAE",
+            )
+            plot_last7d_h24(
+                DT[m_te],
+                Y[m_te, -1],
+                Yhat[:, -1],
+                os.path.join(out_sub, "test_last7d_h24.png"),
+                f"{target_col} ridge_residual h24 last7d",
+            )
+            export_long_csv(
+                os.path.join(out_sub, "test_predictions_long.csv"),
+                DT[m_te],
+                Y[m_te],
+                Yhat,
+                cfg.step_minutes,
+            )
+            out_rows.append(
+                {"target": target_col, "method": "ridge_residual", **metrics}
+            )
 
     # HGBT optional
     def _hgbt_est():
-        return HistGradientBoostingRegressor(max_depth=6, learning_rate=0.08, max_iter=300, random_state=0)
+        return HistGradientBoostingRegressor(
+            max_depth=6, learning_rate=0.08, max_iter=300, random_state=0
+        )
 
     if "hgbt_pure" in cfg.models:
         if not _HAS_HGBT:
@@ -509,15 +658,33 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
             model.fit(X[m_tr], Y[m_tr])
             Yhat = model.predict(X[m_te])
             metrics = compute_metrics(Y[m_te], Yhat)
-            out_sub = os.path.join(base_out, "hgbt_pure"); ensure_dir(out_sub)
-            json.dump({"method": "hgbt_pure", "target": target_col, **metrics},
-                      open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
-                      ensure_ascii=False, indent=2)
-            plot_horizon_mae(np.array(metrics["mae_by_h"]), os.path.join(out_sub, "test_horizon_mae.png"),
-                             f"{target_col} hgbt_pure horizon MAE")
-            plot_last7d_h24(DT[m_te], Y[m_te, -1], Yhat[:, -1], os.path.join(out_sub, "test_last7d_h24.png"),
-                            f"{target_col} hgbt_pure h24 last7d")
-            export_long_csv(os.path.join(out_sub, "test_predictions_long.csv"), DT[m_te], Y[m_te], Yhat, cfg.step_minutes)
+            out_sub = os.path.join(base_out, "hgbt_pure")
+            ensure_dir(out_sub)
+            json.dump(
+                {"method": "hgbt_pure", "target": target_col, **metrics},
+                open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
+                ensure_ascii=False,
+                indent=2,
+            )
+            plot_horizon_mae(
+                np.array(metrics["mae_by_h"]),
+                os.path.join(out_sub, "test_horizon_mae.png"),
+                f"{target_col} hgbt_pure horizon MAE",
+            )
+            plot_last7d_h24(
+                DT[m_te],
+                Y[m_te, -1],
+                Yhat[:, -1],
+                os.path.join(out_sub, "test_last7d_h24.png"),
+                f"{target_col} hgbt_pure h24 last7d",
+            )
+            export_long_csv(
+                os.path.join(out_sub, "test_predictions_long.csv"),
+                DT[m_te],
+                Y[m_te],
+                Yhat,
+                cfg.step_minutes,
+            )
             out_rows.append({"target": target_col, "method": "hgbt_pure", **metrics})
 
     if "hgbt_residual" in cfg.models:
@@ -532,25 +699,68 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
             model.fit(Xr[m_tr], Yres[m_tr])
             Yhat = PF[m_te] + model.predict(Xr[m_te])
             metrics = compute_metrics(Y[m_te], Yhat)
-            out_sub = os.path.join(base_out, "hgbt_residual"); ensure_dir(out_sub)
-            json.dump({"method": "hgbt_residual", "target": target_col, "pred_col": pred_col, **metrics},
-                      open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
-                      ensure_ascii=False, indent=2)
-            plot_horizon_mae(np.array(metrics["mae_by_h"]), os.path.join(out_sub, "test_horizon_mae.png"),
-                             f"{target_col} hgbt_residual horizon MAE")
-            plot_last7d_h24(DT[m_te], Y[m_te, -1], Yhat[:, -1], os.path.join(out_sub, "test_last7d_h24.png"),
-                            f"{target_col} hgbt_residual h24 last7d")
-            export_long_csv(os.path.join(out_sub, "test_predictions_long.csv"), DT[m_te], Y[m_te], Yhat, cfg.step_minutes)
-            out_rows.append({"target": target_col, "method": "hgbt_residual", **metrics})
+            out_sub = os.path.join(base_out, "hgbt_residual")
+            ensure_dir(out_sub)
+            json.dump(
+                {
+                    "method": "hgbt_residual",
+                    "target": target_col,
+                    "pred_col": pred_col,
+                    **metrics,
+                },
+                open(os.path.join(out_sub, "metrics.json"), "w", encoding="utf-8"),
+                ensure_ascii=False,
+                indent=2,
+            )
+            plot_horizon_mae(
+                np.array(metrics["mae_by_h"]),
+                os.path.join(out_sub, "test_horizon_mae.png"),
+                f"{target_col} hgbt_residual horizon MAE",
+            )
+            plot_last7d_h24(
+                DT[m_te],
+                Y[m_te, -1],
+                Yhat[:, -1],
+                os.path.join(out_sub, "test_last7d_h24.png"),
+                f"{target_col} hgbt_residual h24 last7d",
+            )
+            export_long_csv(
+                os.path.join(out_sub, "test_predictions_long.csv"),
+                DT[m_te],
+                Y[m_te],
+                Yhat,
+                cfg.step_minutes,
+            )
+            out_rows.append(
+                {"target": target_col, "method": "hgbt_residual", **metrics}
+            )
 
-    json.dump({
-        "target": target_col,
-        "last_valid_time": str(last_valid_time),
-        "counts": {"train": int(m_tr.sum()), "val": int(splits["val"].sum()), "test": int(m_te.sum())},
-        "train_target_max_date_range": [str(splits["train_dates"][0]), str(splits["train_dates"][-1])],
-        "val_target_max_date_range": [str(splits["val_dates"][0]), str(splits["val_dates"][-1])],
-        "test_target_max_date_range": [str(splits["test_dates"][0]), str(splits["test_dates"][-1])],
-    }, open(os.path.join(base_out, "split_dates.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    json.dump(
+        {
+            "target": target_col,
+            "last_valid_time": str(last_valid_time),
+            "counts": {
+                "train": int(m_tr.sum()),
+                "val": int(splits["val"].sum()),
+                "test": int(m_te.sum()),
+            },
+            "train_target_max_date_range": [
+                str(splits["train_dates"][0]),
+                str(splits["train_dates"][-1]),
+            ],
+            "val_target_max_date_range": [
+                str(splits["val_dates"][0]),
+                str(splits["val_dates"][-1]),
+            ],
+            "test_target_max_date_range": [
+                str(splits["test_dates"][0]),
+                str(splits["test_dates"][-1]),
+            ],
+        },
+        open(os.path.join(base_out, "split_dates.json"), "w", encoding="utf-8"),
+        ensure_ascii=False,
+        indent=2,
+    )
 
     return out_rows
 
@@ -558,18 +768,37 @@ def eval_one_target(cfg: Cfg, df_raw: pd.DataFrame, target_col: str) -> List[Dic
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--excel", type=str, required=True)
-    p.add_argument("--sheet", type=str, default=None, help="Sheet name or index (e.g. 0). Default: first sheet.")
+    p.add_argument(
+        "--sheet",
+        type=str,
+        default=None,
+        help="Sheet name or index (e.g. 0). Default: first sheet.",
+    )
     p.add_argument("--time_col", type=str, default="datetime")
-    p.add_argument("--target_cols", type=str, required=True, help="Comma-separated target columns (actual)")
+    p.add_argument(
+        "--target_cols",
+        type=str,
+        required=True,
+        help="Comma-separated target columns (actual)",
+    )
     p.add_argument("--step_minutes", type=int, default=15)
     p.add_argument("--lookback", type=int, default=192)
     p.add_argument("--H", type=int, default=24)
     p.add_argument("--val_days", type=int, default=5)
     p.add_argument("--test_days", type=int, default=6)
-    p.add_argument("--feat_nan_strategy", type=str, default="ffill_bfill", choices=["none", "ffill", "ffill_bfill"])
+    p.add_argument(
+        "--feat_nan_strategy",
+        type=str,
+        default="ffill_bfill",
+        choices=["none", "ffill", "ffill_bfill"],
+    )
     p.add_argument("--ridge_alpha", type=float, default=10.0)
-    p.add_argument("--models", type=str, default="seasonal_median,persist,use_pred,ridge_pure,ridge_residual",
-                   help="Comma-separated: seasonal_median,persist,use_pred,ridge_pure,ridge_residual,hgbt_pure,hgbt_residual")
+    p.add_argument(
+        "--models",
+        type=str,
+        default="seasonal_median,persist,use_pred,ridge_pure,ridge_residual",
+        help="Comma-separated: seasonal_median,persist,use_pred,ridge_pure,ridge_residual,hgbt_pure,hgbt_residual",
+    )
     p.add_argument("--out_dir", type=str, default="outputs")
     p.add_argument("--tag", type=str, default="exog_v0_4_1_clean")
     return p.parse_args()
@@ -597,8 +826,12 @@ def main():
 
     print("[Start] exog_forecaster_v0_4_1_clean running")
     print(f"[Config] excel={cfg.excel} sheet={cfg.sheet} time_col={cfg.time_col}")
-    print(f"[Config] lookback={cfg.lookback} H={cfg.H} step={cfg.step_minutes}min val_days={cfg.val_days} test_days={cfg.test_days}")
-    print(f"[Config] feat_nan_strategy={cfg.feat_nan_strategy} ridge_alpha={cfg.ridge_alpha}")
+    print(
+        f"[Config] lookback={cfg.lookback} H={cfg.H} step={cfg.step_minutes}min val_days={cfg.val_days} test_days={cfg.test_days}"
+    )
+    print(
+        f"[Config] feat_nan_strategy={cfg.feat_nan_strategy} ridge_alpha={cfg.ridge_alpha}"
+    )
     print(f"[Config] models={cfg.models}")
     print(f"[Out] {os.path.join(cfg.out_dir, cfg.tag)}")
 

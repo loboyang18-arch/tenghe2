@@ -1,0 +1,29 @@
+# 外生预测 key5 默认配置（五大目标 + 最佳方案映射预留）
+# 当前 run_exog_suite 仍使用脚本内 BEST_METHODS，P5 可改为从此文件读
+
+excel: "data/山东-全年-带时间点.xlsx"
+time_col: "datetime"
+step_minutes: 15
+lookback: 192
+H: 24
+val_days: 5
+test_days: 6
+feat_nan_strategy: "ffill_bfill"
+ridge_alpha: 10.0
+out_dir: "outputs"
+tag: "exog_best_current"
+
+# P5 特征配置化：目标列与最佳方法映射
+target_cols:
+  - "系统负荷实际值"
+  - "光伏实际值"
+  - "联络线实际值"
+  - "上旋备用实际值"
+  - "下旋备用实际值"
+
+best_methods:
+  系统负荷实际值: "hgbt_residual"
+  光伏实际值: "hgbt_residual"
+  联络线实际值: "use_pred"
+  上旋备用实际值: "hgbt_pure"
+  下旋备用实际值: "hgbt_pure"

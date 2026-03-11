@@ -1,0 +1,18 @@
+# RT PatchTST exog5 默认配置（仅五大外生）
+# P5：exog_columns 可由脚本 --config 加载
+
+file: "data/山东-全年-带时间点.xlsx"
+exog_columns:
+  - "系统负荷实际值"
+  - "光伏实际值"
+  - "联络线实际值"
+  - "上旋备用实际值"
+  - "下旋备用实际值"
+split:
+  train_start: "2025-01-01"
+  val_start: "2025-11-01"
+  test_start: "2025-12-01"
+  end: "2025-12-30"
+L: 672
+H: 24
+outdir: "rt_patchtst_exog5_v1_outputs"

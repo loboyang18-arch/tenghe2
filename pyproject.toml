@@ -1,0 +1,19 @@
+# 格式化与导入排序：统一多行、可读 diff，便于协作与 review
+# 使用方式：black . && isort .
+
+[tool.black]
+line-length = 88
+target-version = ["py39", "py310"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    rt-env
+  | \.git
+  | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = []

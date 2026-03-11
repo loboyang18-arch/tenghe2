@@ -1,10 +1,10 @@
-# 外生预测 + RT 电价 PatchTST（CPU 即可）
-# PyTorch 建议用 conda 安装: conda install pytorch cpuonly -c pytorch
-# 若仅用 pip，可取消下一行注释并注释掉上面的 conda 说明
-# torch>=2.0.0
+# 腾河项目：纯 Python 通用依赖（不含 PyTorch）
+# PyTorch 请按 README 单独安装：本机 CPU 用 conda/pip cpuonly，云上 GPU 用 CUDA 版。
 
 pandas>=1.4.0
 numpy>=1.21.0
 scikit-learn>=1.0.0
 matplotlib>=3.5.0
 openpyxl>=3.0.0
+# P5 特征配置化
+PyYAML>=6.0

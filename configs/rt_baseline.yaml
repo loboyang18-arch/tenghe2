@@ -1,0 +1,44 @@
+# RT PatchTST baseline 默认配置（P5：preferred_exog_order 可由 --config 加载）
+
+file: "data/山东-全年-带时间点.xlsx"
+preferred_exog_order:
+  - "系统负荷实际值"
+  - "风光总加实际值"
+  - "竞价空间实际值"
+  - "联络线实际值"
+  - "地方电厂发电实际值"
+  - "风电实际值"
+  - "光伏实际值"
+  - "自备机组实际值"
+  - "试验机组实际值"
+  - "非市场化核电实际值"
+  - "上旋备用实际值"
+  - "下旋备用实际值"
+sheet: null
+time_col: null
+rt_label_col: null
+da_col: null
+
+split:
+  train_start: "2025-01-01"
+  val_start: "2025-11-01"
+  test_start: "2025-12-01"
+  end: "2025-12-30"
+
+L: 672
+H: 24
+patch_len: 16
+d_model: 128
+nhead: 8
+layers: 4
+dim_ff: 256
+dropout: 0.1
+
+epochs: 40
+batch_size: 128
+lr: 0.001
+patience: 10
+seed: 42
+
+outdir: "rt_patchtst_v0_1_outputs"
+device: null  # cuda | cpu | null(auto)

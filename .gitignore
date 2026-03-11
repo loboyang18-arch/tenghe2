@@ -22,7 +22,10 @@ checkpoints/
 rt_patchtst_v0_1_outputs/
 rt_patchtst_exog5_v1_outputs/
 
-# 必要的原始数据文件（*.xlsx / *.xls）可提交上传，此处不忽略
+# P3 数据解耦：data/ 下仅保留 README + schema，大文件不提交
+data/*.xlsx
+data/*.xls
+data/*.csv
 
 # IDE / OS
 .DS_Store
