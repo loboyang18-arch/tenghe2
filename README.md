@@ -66,6 +66,7 @@ pip install -r requirements.txt
   - `run_rt_exog5.py` — 实时电价仅 5 条外生
   - `run_exog_suite.py` — 一键运行当前最佳外生预测方案
   - `run_exog_full.py` — 外生预测完整 CLI（多目标、多模型）
+  - `run_rt_future_exog.py` — **ROADMAP 第一步**：双分支（past + 未来 24 步 exog5 预测）
 - **src/**：可复用逻辑（数据、特征、划分、数据集、模型、训练、外生方法）。
   - `split.py`（**P4 统一**）：RT 用 `SplitConfig` + `build_samples_seq2seq`；外生用 `ExogSplitConfig` + `split_by_target_max_date`，默认天数 `DEFAULT_EXOG_VAL_DAYS`/`TEST_DAYS`。
   - `features_config.py`（**P5**）：`load_config`、`get_preferred_exog_order`、`get_exog_key5`、`get_exog_best_methods`，可从 YAML/JSON 或内置默认读特征列表。

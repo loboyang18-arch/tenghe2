@@ -98,3 +98,59 @@ def predict_split(
         yhat_norm = pn + pr
         preds.append(inv_y(yhat_norm, norm))
     return np.concatenate(preds, axis=0)
+
+
+def train_one_epoch_dual(model, loader, optimizer, device):
+    """双分支：loader 返回 (x_past, x_future, y_res, prior)。"""
+    model.train()
+    total = 0.0
+    n = 0
+    loss_fn = nn.MSELoss()
+    for x_past, x_future, y_res, _prior in loader:
+        x_past = x_past.to(device)
+        x_future = x_future.to(device)
+        y_res = y_res.to(device)
+        optimizer.zero_grad()
+        pred_res = model(x_past, x_future)
+        loss = loss_fn(pred_res, y_res)
+        loss.backward()
+        optimizer.step()
+        total += float(loss.item()) * x_past.size(0)
+        n += x_past.size(0)
+    return total / max(n, 1)
+
+
+@torch.no_grad()
+def eval_model_dual(model, loader, device) -> float:
+    model.eval()
+    maes = []
+    for x_past, x_future, y_res, _prior in loader:
+        x_past = x_past.to(device)
+        x_future = x_future.to(device)
+        y_res = y_res.to(device)
+        pred_res = model(x_past, x_future)
+        maes.append(torch.mean(torch.abs(pred_res - y_res)).item())
+    return float(np.mean(maes))
+
+
+@torch.no_grad()
+def predict_split_dual(
+    model,
+    Xn: np.ndarray,
+    X_future: np.ndarray,
+    prior_norm: np.ndarray,
+    norm: Dict[str, np.ndarray],
+    device,
+) -> np.ndarray:
+    """双分支预测原始尺度 [N, H]。"""
+    model.eval()
+    bs = 256
+    preds = []
+    for i in range(0, Xn.shape[0], bs):
+        xp = torch.from_numpy(Xn[i : i + bs]).to(device)
+        xf = torch.from_numpy(X_future[i : i + bs]).to(device)
+        pr = model(xp, xf).cpu().numpy()
+        pn = prior_norm[i : i + bs]
+        yhat_norm = pn + pr
+        preds.append(inv_y(yhat_norm, norm))
+    return np.concatenate(preds, axis=0)
